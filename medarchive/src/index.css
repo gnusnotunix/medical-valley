@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Surfaces */
+  --background: 0 0% 100%;
+  --card: 0 0% 100%;
+  --surface: 210 20% 98%;
+  --border: 214 18% 91%;
+  --ring: 170 75% 24%;
+
+  /* Text */
+  --foreground: 222 24% 10%;
+  --muted: 220 9% 46%;
+  --muted-foreground: 220 9% 40%;
+
+  /* Brand — deep ledger teal */
+  --primary: 170 75% 24%;
+  --primary-foreground: 0 0% 100%;
+  --primary-tint: 168 45% 94%;
+
+  /* Accent — archive-stamp amber, used sparingly for "verified / official" states */
+  --accent: 38 65% 47%;
+  --accent-foreground: 32 45% 14%;
+  --accent-tint: 40 70% 95%;
+
+  /* Status */
+  --success: 152 65% 33%;
+  --success-tint: 150 55% 95%;
+  --warning: 38 65% 47%;
+  --warning-tint: 40 70% 95%;
+  --danger: 5 60% 47%;
+  --danger-tint: 5 70% 96%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+  font-feature-settings: "ss01" on, "cv01" on;
+}
+
+/* Numeric / data values are always set in mono — the registry-ledger signature:
+   prices, IDs, dates, percentages, confidence scores, document codes. */
+.data-mono {
+  @apply font-mono tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 9% 80%);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

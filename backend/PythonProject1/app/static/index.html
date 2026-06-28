@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MedPartners OCR</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 32px; }
+  h1 { font-weight: 600; }
+  #drop { border: 2px dashed #30363d; border-radius: 12px; padding: 48px; text-align: center; color: #8b949e; cursor: pointer; transition: .2s; }
+  #drop.over { border-color: #5a2db9; background: #161b22; color: #e6edf3; }
+  .meta { margin: 16px 0; padding: 16px; background: #161b22; border-radius: 8px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
+  .done { background: #1a7f37; } .error { background: #b62324; } .needs_review { background: #9e6a03; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  th, td { border-bottom: 1px solid #30363d; padding: 8px; text-align: left; }
+  th { color: #8b949e; font-weight: 500; }
+  .spinner { color: #8b949e; margin-top: 16px; }
+</style>
+</head>
+<body>
+<h1>MedPartners — OCR прайсов</h1>
+<div id="drop">Перетащи прайс: PDF, скан, DOCX, XLSX/XLS или фото (можно несколько)</div>
+<input id="file" type="file" accept=".png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.pdf,.docx,.xlsx,.xls" multiple hidden>
+<div id="status"></div>
+<div id="results"></div>
+
+<script>
+const drop = document.getElementById("drop");
+const input = document.getElementById("file");
+const statusEl = document.getElementById("status");
+const results = document.getElementById("results");
+
+drop.onclick = () => input.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); handle(e.dataTransfer.files); };
+input.onchange = () => handle(input.files);
+
+async function handle(files) {
+  if (!files.length) return;
+  statusEl.innerHTML = "";
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+
+  let data;
+  try {
+    const r = await fetch("/api/v1/ocr/batch", { method: "POST", body: form });
+    data = await r.json();
+  } catch (err) {
+    statusEl.innerHTML = '<div class="badge error">Ошибка запроса: ' + err + '</div>';
+    return;
+  }
+
+  // jobs: [{job_id, file_name, status}] либо [{file_name, status:"error", error}] для отклонённых файлов сразу
+  const jobs = data.jobs || [];
+  for (const job of jobs) {
+    if (job.job_id) {
+      renderPending(job.job_id, job.file_name);
+    } else {
+      renderImmediateError(job.file_name, job.error || "Неизвестная ошибка");
+    }
+  }
+
+  const pollingIds = jobs.filter(j => j.job_id).map(j => j.job_id);
+  if (pollingIds.length) pollStatuses(pollingIds);
+}
+
+function renderPending(jobId, fileName) {
+  results.insertAdjacentHTML("beforeend", `
+    <div class="meta" id="job-${jobId}">
+      <strong>${fileName}</strong>
+      <span class="badge needs_review">обрабатывается…</span>
+    </div>`);
+}
+
+function renderImmediateError(fileName, message) {
+  results.insertAdjacentHTML("beforeend", `
+    <div class="meta">
+      <strong>${fileName}</strong>
+      <span class="badge error">error</span>
+      <div style="color:#8b949e;font-size:13px;margin-top:6px">${message}</div>
+    </div>`);
+}
+
+async function pollStatuses(jobIds) {
+  let pending = new Set(jobIds);
+  statusEl.innerHTML = '<div class="spinner">Обработка ' + pending.size + ' файл(ов)...</div>';
+
+  while (pending.size > 0) {
+    await new Promise(res => setTimeout(res, 1500));
+    let data;
+    try {
+      const r = await fetch("/api/v1/ocr/status/batch?job_ids=" + Array.from(pending).join(","));
+      data = await r.json();
+    } catch (err) {
+      continue; // временная сетевая ошибка polling — пробуем снова на следующем тике
+    }
+    for (const job of data.jobs) {
+      if (job.status === "ready") {
+        const card = document.getElementById("job-" + job.job_id);
+        if (card) card.remove();
+        render(job.result);
+        pending.delete(job.job_id);
+      } else if (job.status === "not_found") {
+        pending.delete(job.job_id);
+      }
+    }
+    statusEl.innerHTML = pending.size
+      ? '<div class="spinner">Обработка ' + pending.size + ' файл(ов)...</div>'
+      : "";
+  }
+}
+
+function render(doc) {
+  const items = (doc.items || []).map(i => `
+    <tr>
+      <td>${i.service_name_raw || ""}</td>
+      <td>${i.service_code_source || ""}</td>
+      <td>${i.category || ""}</td>
+      <td>${i.price_original ?? ""}</td>
+      <td>${i.price_nonresident_kzt ?? ""}</td>
+      <td>${i.currency_original || ""}</td>
+    </tr>`).join("");
+  results.insertAdjacentHTML("beforeend", `
+    <div class="meta">
+      <strong>${doc.file_name}</strong>
+      <span class="badge ${doc.parse_status}">${doc.parse_status}</span>
+      <div>Клиника: ${doc.clinic_name || "—"} | Город: ${doc.city || "—"} | Дата: ${doc.effective_date || "—"} | Формат: ${doc.file_format}</div>
+      <div style="color:#8b949e;font-size:13px;margin-top:6px">log: ${doc.parse_log}</div>
+      <table>
+        <tr><th>Услуга</th><th>Код</th><th>Категория</th><th>Цена</th><th>Нерезидент</th><th>Валюта</th></tr>
+        ${items}
+      </table>
+    </div>`);
+}
+</script>
+</body>
+</html>
